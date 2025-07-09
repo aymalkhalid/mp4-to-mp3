@@ -62,3 +62,4 @@ output.*
 
 # FFmpeg binaries and docs
 ffmpeg-master-latest-win64-gpl-shared/
+ffmpeg-master-latest-win64-gpl-shared.zip

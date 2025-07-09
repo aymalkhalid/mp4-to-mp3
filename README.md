@@ -1,3 +1,9 @@
+**Quick Start for Windows Users:**
+
+> Download the `.exe` file from the `dist` folder (or a release) and run it—no installation required! No need to install Python or any dependencies.
+
+![App Screenshot](screen_image_github.png)
+
 # MP4 to MP3 Converter
 
 A simple GUI application to convert MP4 video files to MP3 audio files using Python and Tkinter.
