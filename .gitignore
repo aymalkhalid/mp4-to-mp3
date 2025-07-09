@@ -10,6 +10,7 @@ __pycache__/
 .Python
 build/
 dist/
+!dist/MP4_to_MP3_Converter.exe
 *.egg-info/
 *.spec
 
