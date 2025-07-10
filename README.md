@@ -98,3 +98,11 @@ The executable created by PyInstaller is self-contained and can be run on Window
 ## License
 
 This project is open source and available under the MIT License.
+
+---
+
+## Author
+
+**Aymal Khalid Khan**  
+[LinkedIn](https://www.linkedin.com/in/aymal-khalid-khan-52537a154/)
+

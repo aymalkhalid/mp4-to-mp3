@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from moviepy import VideoFileClip
 import os
+import sys
 import threading
 from pathlib import Path
 
@@ -87,16 +88,23 @@ class MP4ToMP3Converter:
         )
         if filename:
             self.input_file.set(filename)
-            # Auto-generate output filename
+            # Auto-generate output filename in Documents folder for better compatibility
             input_path = Path(filename)
-            output_path = input_path.with_suffix('.mp3')
-            self.output_file.set(str(output_path))
+            documents_dir = os.path.join(os.path.expanduser("~"), "Documents")
+            output_filename = input_path.stem + '.mp3'
+            output_path = os.path.join(documents_dir, output_filename)
+            self.output_file.set(output_path)
             self.show_file_info(filename)
             
     def browse_output_file(self):
+        # Default to user's Documents folder for better compatibility
+        import os
+        default_dir = os.path.join(os.path.expanduser("~"), "Documents")
+        
         filename = filedialog.asksaveasfilename(
             title="Save MP3 file as",
             defaultextension=".mp3",
+            initialdir=default_dir,
             filetypes=[("MP3 files", "*.mp3"), ("All files", "*.*")]
         )
         if filename:
@@ -145,6 +153,7 @@ class MP4ToMP3Converter:
         threading.Thread(target=self.convert_file, daemon=True).start()
         
     def convert_file(self):
+        debug_info = []
         try:
             self.conversion_running = True
             self.convert_button.config(state='disabled')
@@ -155,16 +164,103 @@ class MP4ToMP3Converter:
             input_path = self.input_file.get()
             output_path = self.output_file.get()
             
-            with VideoFileClip(input_path) as video:
+            debug_info.append(f"Input path: {input_path}")
+            debug_info.append(f"Output path: {output_path}")
+            
+            # Validate input file exists
+            if not os.path.exists(input_path):
+                raise Exception(f"Input file does not exist: {input_path}")
+            debug_info.append("Input file exists: OK")
+            
+            # Validate output directory exists and is writable
+            output_dir = os.path.dirname(output_path)
+            if not os.path.exists(output_dir):
+                raise Exception(f"Output directory does not exist: {output_dir}")
+            debug_info.append(f"Output directory exists: {output_dir}")
+            
+            # Test write permissions
+            try:
+                test_file = os.path.join(output_dir, "test_write_permission.tmp")
+                with open(test_file, 'w') as f:
+                    f.write("test")
+                os.remove(test_file)
+                debug_info.append("Write permission test: OK")
+            except Exception as perm_error:
+                raise Exception(f"No write permission for directory: {output_dir}\nPermission error: {str(perm_error)}")
+            
+            # Load video with debug info
+            debug_info.append("Loading video file...")
+            try:
+                video = VideoFileClip(input_path)
+                debug_info.append(f"Video loaded successfully. Duration: {video.duration}")
+                debug_info.append(f"Video FPS: {video.fps}")
+                debug_info.append(f"Video resolution: {video.w}x{video.h}")
+            except Exception as video_error:
+                raise Exception(f"Failed to load video file: {str(video_error)}\nDebug info: {'; '.join(debug_info)}")
+            
+            # Check for audio track
+            try:
                 if video.audio is None:
-                    raise Exception("The selected video file has no audio track")
-                video.audio.write_audiofile(output_path)
+                    video.close()
+                    raise Exception(f"The selected video file has no audio track\nDebug info: {'; '.join(debug_info)}")
+                debug_info.append("Audio track found: OK")
+                
+                # Extract audio with detailed error handling
+                audio = video.audio
+                if audio is None:
+                    video.close()
+                    raise Exception(f"Could not extract audio from video file\nDebug info: {'; '.join(debug_info)}")
+                debug_info.append("Audio extracted: OK")
+                
+                # Attempt conversion with minimal parameters for exe compatibility
+                debug_info.append("Starting audio conversion...")
+                try:
+                    # For executable compatibility, use a more direct approach
+                    if getattr(sys, 'frozen', False):
+                        # Running as executable - use simplified approach
+                        debug_info.append("Executable environment detected - using simplified conversion")
+                        # Don't store audio in a variable to avoid reference issues
+                        video.audio.write_audiofile(output_path, logger=None)
+                    else:
+                        # Running as script - use standard approach
+                        debug_info.append("Script environment detected - using standard conversion")
+                        audio.write_audiofile(output_path)
+                    debug_info.append("Audio conversion completed: OK")
+                except Exception as conv_error:
+                    # If the above fails, try alternative conversion method
+                    debug_info.append("Primary conversion failed, trying alternative method...")
+                    try:
+                        # Alternative: Close and reload the video clip
+                        video.close()
+                        with VideoFileClip(input_path) as fresh_video:
+                            if fresh_video.audio is not None:
+                                fresh_video.audio.write_audiofile(output_path, logger=None)
+                                debug_info.append("Alternative conversion succeeded: OK")
+                            else:
+                                raise Exception("No audio track in reloaded video")
+                    except Exception as alt_error:
+                        raise Exception(f"Both conversion methods failed:\nPrimary: {str(conv_error)}\nAlternative: {str(alt_error)}\nDebug info: {'; '.join(debug_info)}")
+                finally:
+                    # Ensure resources are cleaned up
+                    try:
+                        if 'audio' in locals() and audio is not None:
+                            audio.close()
+                        video.close()
+                    except:
+                        pass
+                        
+            except Exception as audio_error:
+                try:
+                    video.close()
+                except:
+                    pass
+                raise audio_error
                 
             # Conversion completed
             self.root.after(0, self.conversion_complete)
             
         except Exception as e:
-            error_message = str(e)
+            error_message = f"{str(e)}\n\nDetailed Debug Information:\n{chr(10).join(debug_info)}"
             self.root.after(0, lambda: self.conversion_error(error_message))
             
     def conversion_complete(self):
@@ -189,7 +285,26 @@ class MP4ToMP3Converter:
         self.convert_button.config(state='normal')
         self.progress.stop()
         self.status_label.config(text="Conversion failed", foreground="red")
-        messagebox.showerror("Conversion Error", f"Failed to convert file:\n{error_message}")
+        
+        # Add system information for debugging exe issues
+        system_info = []
+        system_info.append(f"Python executable: {sys.executable}")
+        system_info.append(f"Running from: {'Executable' if getattr(sys, 'frozen', False) else 'Script'}")
+        system_info.append(f"Current working directory: {os.getcwd()}")
+        system_info.append(f"Temp directory: {os.environ.get('TEMP', 'Not found')}")
+        
+        # Check if FFmpeg is available
+        try:
+            import imageio_ffmpeg
+            ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+            system_info.append(f"FFmpeg path: {ffmpeg_path}")
+            system_info.append(f"FFmpeg exists: {os.path.exists(ffmpeg_path)}")
+        except Exception as ffmpeg_error:
+            system_info.append(f"FFmpeg check failed: {str(ffmpeg_error)}")
+        
+        full_error = f"{error_message}\n\n--- System Information ---\n{chr(10).join(system_info)}"
+        
+        messagebox.showerror("Conversion Error", f"Failed to convert file:\n\n{full_error}")
 
 
 def main():
